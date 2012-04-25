@@ -315,7 +315,7 @@ route
     {
         xlog("L_WARN", "$ci|end|to many hops");
 
-        sl_send_reply("483", "We refuse to process this endless imbroglio");
+        sl_send_reply("483", "We refuse to process your infinite loop.");
 
         exit;
     }
@@ -904,13 +904,27 @@ failure_route[internal_fault]
 
     # if the failure case was soemthing that we should recover
     # from then try to find a new media server
-    if (t_check_status("(401)|(407)|(403)"))
+    if (t_check_status("(401)|(407)"))
     {
         xlog("L_INFO", "$ci|log|failure route ignoring auth reply $T_reply_code $rr");
     }
+    else if (t_check_status("403"))
+    {
+        xlog("L_INFO", "$ci|log|failure route overriding reply code 403 with 503");
+
+        xlog("L_INFO", "$ci|pass|$(<request>si):$(<request>sp)");
+
+        send_reply("503", "Error: Services Unavailable. Try Later");
+
+        exit();
+    }
     else if (t_check_status("402"))
     {
-        send_reply("486", "Insert coin");
+        xlog("L_INFO", "$ci|log|failure route overriding reply code 402 with 486");
+
+        xlog("L_INFO", "$ci|pass|$(<request>si):$(<request>sp)");
+
+        send_reply("486", "Insufficient Funds");
 
         exit();
     }
@@ -961,6 +975,16 @@ failure_route[internal_fault]
             $avp(i:55) = $avp(i:55) + 1;
 
             cache_store("local", "$ci-failure", "$avp(i:55)", 60);
+
+            exit();
+        }
+        else if (t_check_status("404"))
+        {
+            xlog("L_ERR", "$ci|log|no other media servers avaliable, sending 486");
+            
+            cache_remove("local", "$ci-failure");
+
+            send_reply("486", "Not found");
 
             exit();
         }
