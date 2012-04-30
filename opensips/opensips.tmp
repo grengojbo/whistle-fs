@@ -52,7 +52,7 @@ tos=IPTOS_LOWDELAY
 mcast_loopback=no
 mcast_ttl=1
 mhomed=0
-tcp_accept_aliases=yes
+# tcp_accept_aliases
 tcp_connect_timeout=3
 tcp_connection_lifetime=120
 tcp_max_connections=2048
@@ -298,6 +298,8 @@ modparam("mi_fifo", "fifo_name", "/tmp/opensips_fifo")
 ######################################################################
 ## Multiple Module Parameters
 ######################################################################
+
+
 ######################################################################
 ## Main Request Routing
 ######################################################################
@@ -315,7 +317,7 @@ route
     {
         xlog("L_WARN", "$ci|end|to many hops");
 
-        sl_send_reply("483", "We refuse to process your infinite loop.");
+        sl_send_reply("483", "We refuse to process this endless imbroglio");
 
         exit;
     }
@@ -327,6 +329,17 @@ route
     if (src_ip==myself)
     {
         xlog("L_WARN", "$ci|end|sourced from this server");
+
+        exit;
+    }
+
+    # currently we dont support subscribe in whistle so to keep the noise down
+    # just end the request here.  For options just end the request here as well.
+    if (is_method("OPTIONS"))
+    {
+        xlog("L_NOTICE", "$ci|end|unsupported method");
+
+        sl_send_reply("503", "Rawr!!");
 
         exit;
     }
@@ -348,27 +361,6 @@ route
     else
     {
         xlog("L_INFO", "$ci|log|originated from external sources");
-    }
-
-    # we must forward SIP OPTIONS pings from FreeSWITCH to registered devices to keep NAT
-    # pinholes open. Someday we need to move this somewhere more reliable but this will
-    # do for now.
-    if (is_method("OPTIONS"))
-    {
-        if (isflagset(26))
-        {
-            xlog("L_INFO", "$ci|log|forwarding OPTIONS ping to endpoint");
-
-            route(internal_to_external_relay);
-        } else {
-            # this request came from an external device to us. Reject it
-            xlog("L_NOTICE", "$ci|end|unsupported method");
-
-            sl_send_reply("503", "Rawr!!");
-
-        }
-
-        exit;
     }
 
     # if the to header has a tag attached then it implies this request
@@ -558,7 +550,7 @@ route
     {
         xlog("L_ERR", "$ci|end|no servers avaliable");
 
-        sl_send_reply("480", "All servers busy");
+        sl_send_reply("480", "The cake is a lie!");
 
         exit;
     }
@@ -594,44 +586,10 @@ route
         xlog("L_INFO", "$ci|log|routing call to arbitrary media server $rd:$rp");
     }
 
-    if($avp(i:55) && $rU == "*6683*") 
-    {
-        xlog("L_INFO", "$ci|log|removing association with server $avp(i:55)");
-
-        if($(avp(i:271)[0]) != $avp(i:55))
-        {
-            # set the domain for this request (server IP to route to)
-            $rd = $(avp(i:271)[0]{uri.host});
-
-            # set the port for this request (server IP to route to)
-            $rp = $(avp(i:271)[0]{uri.port});
-        }
-        else
-        {
-            # set the domain for this request (server IP to route to)
-            $rd = $(avp(i:271)[1]{uri.host});
-
-            # set the port for this request (server IP to route to)
-            $rp = $(avp(i:271)[1]{uri.port});
-        }
-
-        if ($ct.fields(uri))
-        {
-            xlog("L_INFO", "$ci|log|created new association between $(ct.fields(uri){uri.user}) and media server sip:$rd:$rp");
-
-            cache_store("local", "$(ct.fields(uri){uri.user})", "sip:$rd:$rp", 3600);
-        }
-
-        cache_remove("local", "$ci");
-
-        sl_send_reply("503", "sip:$rd:$rp");
-
-        exit;
-    }
     # if the dispatcher list (in 271) does not start with
     # the request domain/port that we are sending this call
     # to, re-order the list so that it does
-    else if($avp(i:55) && $(avp(i:271)[0]) != $avp(i:55))
+    if($avp(i:55) && $(avp(i:271)[0]) != $avp(i:55))
     {
         # create a index var for our loop (arrays are start at 0 and this is a count)
         $var(i) = $avp(i:274) - 1;
@@ -904,27 +862,13 @@ failure_route[internal_fault]
 
     # if the failure case was soemthing that we should recover
     # from then try to find a new media server
-    if (t_check_status("(401)|(407)"))
+    if (t_check_status("(401)|(407)|(403)"))
     {
         xlog("L_INFO", "$ci|log|failure route ignoring auth reply $T_reply_code $rr");
     }
-    else if (t_check_status("403"))
-    {
-        xlog("L_INFO", "$ci|log|failure route overriding reply code 403 with 503");
-
-        xlog("L_INFO", "$ci|pass|$(<request>si):$(<request>sp)");
-
-        send_reply("503", "Error: Services Unavailable. Try Later");
-
-        exit();
-    }
     else if (t_check_status("402"))
     {
-        xlog("L_INFO", "$ci|log|failure route overriding reply code 402 with 486");
-
-        xlog("L_INFO", "$ci|pass|$(<request>si):$(<request>sp)");
-
-        send_reply("486", "Insufficient Funds");
+        send_reply("486", "More money please");
 
         exit();
     }
@@ -975,16 +919,6 @@ failure_route[internal_fault]
             $avp(i:55) = $avp(i:55) + 1;
 
             cache_store("local", "$ci-failure", "$avp(i:55)", 60);
-
-            exit();
-        }
-        else if (t_check_status("404"))
-        {
-            xlog("L_ERR", "$ci|log|no other media servers avaliable, sending 486");
-            
-            cache_remove("local", "$ci-failure");
-
-            send_reply("486", "Not found");
 
             exit();
         }
