@@ -172,7 +172,7 @@
 
             <!-- ODBC -->
             <!--<param name="odbc-dsn" value="fs_sofia"/>-->
-            <!--<param name="sql-in-transactions" value="true"/>--> -->
+            <!--<param name="sql-in-transactions" value="true"/>-->
 
 
             <!-- Watchdog -->
